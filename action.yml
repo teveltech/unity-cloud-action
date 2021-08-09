@@ -1,0 +1,52 @@
+name: 'Unity Cloud Action'
+description: 'Download artifacts from Unity Cloud Build'
+inputs:
+  token:
+    description: 'token'
+    required: true
+  org:
+    description: 'organization ID'
+    required: true
+  project:
+    description: 'project ID'
+    required: true
+outputs:
+  buildtarget:
+    description: "Project's last build target"
+    value: ${{ steps.buildtarget.outputs.buildtarget }}
+  download_link:
+    description: "Artifacts' download link"
+    value: ${{ steps.link-gen.outputs.link }}
+runs:
+  using: "composite"
+  steps:
+    - id: buildtarget
+      run: |
+          buildtarget=$(curl --silent \
+          -X GET \
+          -H "Authorization: Basic ${{ inputs.token }}" \
+          https://build-api.cloud.unity3d.com/api/v1/orgs/${{ inputs.org }}/projects/${{ inputs.project }}/buildtargets | awk 'gsub(/.*"buildtargetid":"|",".*/,"")')
+          echo "::set-output name=buildtarget::$(echo $buildtarget)"
+      shell: bash
+
+    - id: link-gen
+      run: |
+          link=$(curl --silent \
+          -X GET \
+          -H "Content-Type: application/json" \
+          -H "Authorization: Basic ${{ inputs.token }}" \
+          https://build-api.cloud.unity3d.com/api/v1/orgs/${{ inputs.org }}/projects/${{ inputs.project }}/buildtargets/${{ steps.buildtarget.outputs.buildtarget }}/builds | awk 'BEGIN{ RS="\",\"meta\":{\"type\":\"ZIP\"}}"}{gsub(/.*download_primary":{"method":"get","href":"/,"");print;exit}' )
+          echo "::set-output name=link::$(echo $link)"
+      shell: bash
+
+    - id: download
+      run: curl ${{ steps.link-gen.outputs.link }} -o unity.zip
+      shell: bash
+
+    - id: unzip
+      run: unzip ./unity.zip
+      shell: bash
+    
+    - id: cleanup
+      run: rm ./unity.zip
+      shell: bash
